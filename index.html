@@ -198,10 +198,13 @@ convertBtn.addEventListener('click',async()=>{
 
     const endTime=durInput>0?Math.min(startTime+durInput,video.duration):video.duration;
     const ratio=video.videoHeight/video.videoWidth;
-    const height=Math.round(width*ratio);
+    const w=Math.floor(width);
+    const h=Math.floor(w*ratio);
+
+    if(w<=0||h<=0)throw new Error('视频尺寸异常');
 
     const canvas=document.createElement('canvas');
-    canvas.width=width;canvas.height=height;
+    canvas.width=w;canvas.height=h;
     const ctx=canvas.getContext('2d');
 
     /* 提取帧 */
@@ -209,7 +212,7 @@ convertBtn.addEventListener('click',async()=>{
     const totalFrames=Math.floor((endTime-startTime)*fps);
     status.textContent=`提取帧中… 0/${totalFrames}`;
 
-    const encoder=new GIFEncoder(width,height);
+    const encoder=new GIFEncoder(w,h);
     encoder.setDelay(Math.round(1000/fps));
     encoder.setRepeat(0);
     encoder.setQuality(quality);
@@ -218,7 +221,7 @@ convertBtn.addEventListener('click',async()=>{
     let count=0;
     while(t<endTime){
       await seekTo(video,t);
-      ctx.drawImage(video,0,0,width,height);
+      ctx.drawImage(video,0,0,w,h);
       encoder.addFrame(ctx);
       count++;
       const pct=Math.round(count/totalFrames*80);
@@ -239,7 +242,7 @@ convertBtn.addEventListener('click',async()=>{
     const url=URL.createObjectURL(blob);
     gifOut.src=url;
     dlBtn.href=url;
-    gifInfo.textContent=`大小: ${sizeMB} MB | ${width}×${height} | ${count} 帧`;
+    gifInfo.textContent=`大小: ${sizeMB} MB | ${w}×${h} | ${count} 帧`;
 
     if(blob.size>maxMB*1024*1024){
       gifInfo.textContent+=` ⚠️ 超出 ${maxMB}MB，建议降低宽度/帧率/时长`;
