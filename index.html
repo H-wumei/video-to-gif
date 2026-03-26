@@ -387,18 +387,68 @@ function buildLottieJSON(frames,w,h,fps){
 dlLottie.addEventListener('click',e=>{
   e.preventDefault();
   if(!lottieFrames.length){alert('请先转换视频');return}
-  status.textContent='生成 Lottie JSON 中…';
+  status.textContent='生成 Lottie JSON + 预览 HTML 中…';
   setTimeout(()=>{
     const json=buildLottieJSON(lottieFrames,lottieW,lottieH,lottieFps);
     const str=JSON.stringify(json);
-    const blob=new Blob([str],{type:'application/json'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;a.download='output-lottie.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    const sizeMB=(blob.size/1024/1024).toFixed(2);
-    status.textContent=`Lottie JSON 已下载 (${sizeMB} MB)`;
+
+    /* 下载 JSON */
+    const jsonBlob=new Blob([str],{type:'application/json'});
+    const jsonUrl=URL.createObjectURL(jsonBlob);
+    const a1=document.createElement('a');
+    a1.href=jsonUrl;a1.download='output-lottie.json';
+    a1.click();
+    URL.revokeObjectURL(jsonUrl);
+
+    /* 生成预览 HTML 并下载 */
+    const previewHTML=`<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Lottie 预览</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f1a;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#e0e0e0}
+h1{font-size:1.3rem;margin-bottom:16px;background:linear-gradient(135deg,#a78bfa,#6366f1);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+#player{border:1px solid #334155;border-radius:12px;overflow:hidden}
+.controls{margin-top:12px;display:flex;gap:8px}
+.controls button{padding:8px 20px;border:none;border-radius:8px;background:#6366f1;color:#fff;font-size:.9rem;cursor:pointer}
+.controls button:hover{background:#4f46e5}
+.info{font-size:.8rem;color:#94a3b8;margin-top:8px}
+</style>
+</head>
+<body>
+<h1>Lottie 动画预览</h1>
+<div id="player"></div>
+<div class="controls">
+<button onclick="anim.goToAndPlay(0,true)">重播</button>
+<button onclick="anim.isPaused?anim.play():anim.pause()">播放/暂停</button>
+</div>
+<div class="info" id="info"></div>
+<script src="https://cdn.jsdelivr.net/npm/lottie-web@5.12.2/build/player/lottie.min.js"><\\/script>
+<script>
+const animData=${str};
+const anim=lottie.loadAnimation({
+container:document.getElementById('player'),
+renderer:'svg',
+loop:true,
+autoplay:true,
+animationData:animData
+});
+document.getElementById('info').textContent=animData.w+'×'+animData.h+' | '+animData.fr+' fps | '+animData.op+' 帧';
+<\\/script>
+</body>
+</html>`;
+
+    const htmlBlob=new Blob([previewHTML.replace(/<\\\/script>/g,'<\/script>')],{type:'text/html'});
+    const htmlUrl=URL.createObjectURL(htmlBlob);
+    const a2=document.createElement('a');
+    a2.href=htmlUrl;a2.download='lottie-preview.html';
+    setTimeout(()=>{a2.click();URL.revokeObjectURL(htmlUrl)},300);
+
+    const sizeMB=(jsonBlob.size/1024/1024).toFixed(2);
+    status.textContent=`Lottie JSON (${sizeMB} MB) + 预览 HTML 已下载`;
   },50);
 });
 </script>
