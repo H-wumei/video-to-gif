@@ -95,6 +95,7 @@
     <img id="gifOut" alt="GIF">
     <div class="info" id="gifInfo"></div>
     <a class="dl" id="dlBtn" download="output.gif">下载 GIF</a>
+    <a class="dl" id="dlLottie" download="output.json" style="margin-left:8px;background:linear-gradient(135deg,#a78bfa,#6366f1);">下载 Lottie JSON</a>
   </div>
 </div>
 
@@ -137,8 +138,11 @@ const resultEl=document.getElementById('result');
 const gifOut=document.getElementById('gifOut');
 const gifInfo=document.getElementById('gifInfo');
 const dlBtn=document.getElementById('dlBtn');
+const dlLottie=document.getElementById('dlLottie');
 
 let selectedFile=null;
+let lottieFrames=[]; /* 存储每帧 base64 用于 Lottie */
+let lottieW=0,lottieH=0,lottieFps=10;
 
 dropZone.addEventListener('click',()=>fileInput.click());
 fileInput.addEventListener('change',()=>{if(fileInput.files.length)handleFile(fileInput.files[0])});
@@ -211,6 +215,7 @@ convertBtn.addEventListener('click',async()=>{
 
     const interval=1/userFps;
     const allFrames=[];
+    const frameBase64=[]; /* 用于 Lottie */
     let t=Math.max(startTime,0.05);
     const totalEst=Math.floor((endTime-t)/interval);
     status.textContent=`提取帧中… 0/${totalEst}`;
@@ -219,6 +224,7 @@ convertBtn.addEventListener('click',async()=>{
       await seekTo(video,t);
       ctx.drawImage(video,0,0,maxW,maxH);
       allFrames.push(ctx.getImageData(0,0,maxW,maxH));
+      frameBase64.push(canvas.toDataURL('image/png'));
       const pct=Math.round(allFrames.length/Math.max(totalEst,1)*50);
       bar.style.width=pct+'%';
       status.textContent=`提取帧中… ${allFrames.length}/${totalEst}`;
@@ -294,12 +300,106 @@ convertBtn.addEventListener('click',async()=>{
     resultEl.classList.add('active');
     bar.style.width='100%';
     status.textContent='转换完成 ✓';
+
+    /* 保存 Lottie 所需数据 */
+    lottieFrames=frameBase64;
+    lottieW=maxW;lottieH=maxH;lottieFps=usedFps;
   }catch(err){
     console.error(err);
     status.textContent='转换失败: '+err.message;
   }finally{
     convertBtn.disabled=false;
   }
+});
+
+/* ============ Lottie JSON 生成 ============ */
+function buildLottieJSON(frames,w,h,fps){
+  const totalFrames=frames.length;
+  /* 构建 assets：每帧一张图 */
+  const assets=frames.map((b64,i)=>({
+    id:'img_'+i,
+    w:w,h:h,
+    u:'',
+    p:b64,
+    e:1 /* embedded */
+  }));
+
+  /* 构建序列帧图层 */
+  const layer={
+    ddd:0,
+    ind:1,
+    ty:2, /* image layer */
+    nm:'frames',
+    refId:assets[0].id,
+    sr:1,
+    ks:{
+      o:{a:0,k:100},
+      r:{a:0,k:0},
+      p:{a:0,k:[w/2,h/2,0]},
+      a:{a:0,k:[w/2,h/2,0]},
+      s:{a:0,k:[100,100,100]}
+    },
+    ao:0,
+    ip:0,
+    op:totalFrames,
+    st:0,
+    bm:0
+  };
+
+  /* 用 time remap 实现序列帧播放 */
+  /* 每帧在对应时间点显示对应图片 */
+  /* Lottie 不直接支持序列帧切换，用多个图层+时间控制 */
+  const layers=frames.map((b64,i)=>({
+    ddd:0,
+    ind:i+1,
+    ty:2,
+    nm:'frame_'+i,
+    refId:'img_'+i,
+    sr:1,
+    ks:{
+      o:{a:0,k:100},
+      r:{a:0,k:0},
+      p:{a:0,k:[w/2,h/2,0]},
+      a:{a:0,k:[w/2,h/2,0]},
+      s:{a:0,k:[100,100,100]}
+    },
+    ao:0,
+    ip:i,
+    op:i+1,
+    st:0,
+    bm:0
+  }));
+
+  return {
+    v:'5.7.4',
+    fr:fps,
+    ip:0,
+    op:totalFrames,
+    w:w,
+    h:h,
+    nm:'video-to-lottie',
+    ddd:0,
+    assets:assets,
+    layers:layers
+  };
+}
+
+dlLottie.addEventListener('click',e=>{
+  e.preventDefault();
+  if(!lottieFrames.length){alert('请先转换视频');return}
+  status.textContent='生成 Lottie JSON 中…';
+  setTimeout(()=>{
+    const json=buildLottieJSON(lottieFrames,lottieW,lottieH,lottieFps);
+    const str=JSON.stringify(json);
+    const blob=new Blob([str],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='output-lottie.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    const sizeMB=(blob.size/1024/1024).toFixed(2);
+    status.textContent=`Lottie JSON 已下载 (${sizeMB} MB)`;
+  },50);
 });
 </script>
 </body>
