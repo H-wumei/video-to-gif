@@ -325,7 +325,12 @@ function seekTo(video, time) {
   return new Promise(function(resolve) {
     function onSeeked() {
       video.removeEventListener('seeked', onSeeked);
-      requestAnimationFrame(function() { requestAnimationFrame(resolve); });
+      /* 等待足够时间确保帧完全解码渲染 */
+      setTimeout(function() {
+        requestAnimationFrame(function() {
+          requestAnimationFrame(resolve);
+        });
+      }, 50);
     }
     video.addEventListener('seeked', onSeeked);
     video.currentTime = time;
@@ -380,6 +385,7 @@ convertBtn.addEventListener('click', async function() {
 
     while (t < endTime) {
       await seekTo(video, t);
+      ctx.clearRect(0, 0, maxW, maxH);
       ctx.drawImage(video, 0, 0, maxW, maxH);
       allFrames.push(ctx.getImageData(0, 0, maxW, maxH));
       frameBase64.push(canvas.toDataURL('image/png'));
