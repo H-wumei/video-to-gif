@@ -190,8 +190,8 @@ function encodeGIF(frames, width, height, palette, delays) {
 
   /* Each frame */
   for (var f = 0; f < frames.length; f++) {
-    /* Graphic Control Extension */
-    out.push(0x21, 0xF9, 4, 0);
+    /* Graphic Control Extension - disposal method: restore to background */
+    out.push(0x21, 0xF9, 4, 8); /* 8 = dispose to background (0b00001000) */
     pushShort(out, Math.round(delays[f] / 10));
     out.push(0, 0);
 
