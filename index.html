@@ -112,19 +112,20 @@
 /* ========== 颜色量化：Median Cut 算法（简洁可靠版） ========== */
 function quantize(frames, maxColors, sampleCount) {
   var pixels = [];
-  /* 从所有帧中均匀采样像素，颜色覆盖更全面 */
   var isArray = Array.isArray(frames);
   var frameList = isArray ? frames : [frames];
   var totalPixels = 0;
   for (var f = 0; f < frameList.length; f++) {
     totalPixels += frameList[f].data.length / 4;
   }
-  var step = Math.max(1, Math.floor(totalPixels / (sampleCount || 50000)));
+  /* 限制最大采样数，避免卡死 */
+  var maxSample = Math.min(sampleCount || 50000, 60000);
+  var step = Math.max(1, Math.floor(totalPixels / maxSample));
   var count = 0;
   for (var f = 0; f < frameList.length; f++) {
     var data = frameList[f].data;
     for (var i = 0; i < data.length; i += 4) {
-      if (count % step === 0) {
+      if (count % step === 0 && pixels.length < maxSample) {
         pixels.push([data[i], data[i+1], data[i+2]]);
       }
       count++;
@@ -480,6 +481,10 @@ convertBtn.addEventListener('click', async function() {
     URL.revokeObjectURL(fileURL);
 
     /* 用所有帧建调色板，颜色更准确 */
+    statusEl.textContent = '生成调色板中…';
+    bar.style.width = '52%';
+    /* 用 setTimeout 让 UI 有机会更新 */
+    await new Promise(function(r) { setTimeout(r, 50); });
     var palette = quantize(allFrames, 256, sampleCount);
 
     /* 智能编码 */
@@ -500,6 +505,7 @@ convertBtn.addEventListener('click', async function() {
 
       statusEl.textContent = '编码: ' + w + '×' + h + ' ' + fps + 'fps (第' + (ai+1) + '轮)…';
       bar.style.width = (55 + ai * 5) + '%';
+      await new Promise(function(r) { setTimeout(r, 30); });
 
       var encCanvas = document.createElement('canvas');
       encCanvas.width = w; encCanvas.height = h;
