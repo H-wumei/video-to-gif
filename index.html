@@ -76,15 +76,15 @@
     <video id="srcVideo" controls muted playsinline></video>
   </div>
   <div class="settings">
-    <label>宽度 (px)<input type="number" id="optWidth" value="320" min="50" max="1920"></label>
-    <label>帧率 (fps)<input type="number" id="optFps" value="10" min="1" max="30"></label>
+    <label>宽度 (px)<input type="number" id="optWidth" value="480" min="50" max="1920"></label>
+    <label>帧率 (fps)<input type="number" id="optFps" value="15" min="1" max="30"></label>
     <div class="full-row">
       <label>开始时间 (秒)<input type="number" id="optStart" value="0" min="0" step="0.1"></label>
       <label>持续时长 (秒，0=全部)<input type="number" id="optDur" value="0" min="0" step="0.1"></label>
     </div>
     <div class="full-row">
       <label>目标大小上限 (MB)<input type="number" id="optMaxMB" value="5" min="1" max="50" step="0.5"></label>
-      <label>颜色采样 (越大越准)<input type="number" id="optSample" value="20000" min="1000" max="100000" step="1000"></label>
+      <label>颜色采样 (越大越准)<input type="number" id="optSample" value="50000" min="1000" max="200000" step="1000"></label>
     </div>
     <div class="full-row">
       <label>抖动 (减少色带)
@@ -110,13 +110,25 @@
 
 <script>
 /* ========== 颜色量化：Median Cut 算法（简洁可靠版） ========== */
-function quantize(imageData, maxColors, sampleCount) {
+function quantize(frames, maxColors, sampleCount) {
   var pixels = [];
-  var data = imageData.data;
-  var totalPixels = data.length / 4;
-  var step = Math.max(1, Math.floor(totalPixels / (sampleCount || 20000)));
-  for (var i = 0; i < data.length; i += 4 * step) {
-    pixels.push([data[i], data[i+1], data[i+2]]);
+  /* 从所有帧中均匀采样像素，颜色覆盖更全面 */
+  var isArray = Array.isArray(frames);
+  var frameList = isArray ? frames : [frames];
+  var totalPixels = 0;
+  for (var f = 0; f < frameList.length; f++) {
+    totalPixels += frameList[f].data.length / 4;
+  }
+  var step = Math.max(1, Math.floor(totalPixels / (sampleCount || 50000)));
+  var count = 0;
+  for (var f = 0; f < frameList.length; f++) {
+    var data = frameList[f].data;
+    for (var i = 0; i < data.length; i += 4) {
+      if (count % step === 0) {
+        pixels.push([data[i], data[i+1], data[i+2]]);
+      }
+      count++;
+    }
   }
 
   function getRange(pxs, ch) {
@@ -467,8 +479,8 @@ convertBtn.addEventListener('click', async function() {
     }
     URL.revokeObjectURL(fileURL);
 
-    /* 用第一帧建调色板 */
-    var palette = quantize(allFrames[0], 256, sampleCount);
+    /* 用所有帧建调色板，颜色更准确 */
+    var palette = quantize(allFrames, 256, sampleCount);
 
     /* 智能编码 */
     var attempts = [
@@ -505,7 +517,7 @@ convertBtn.addEventListener('click', async function() {
       }
 
       /* 如果缩放了，重新建调色板 */
-      var pal = (scale < 1) ? quantize(selectedFrames[0], 256, sampleCount) : palette;
+      var pal = (scale < 1) ? quantize(selectedFrames, 256, sampleCount) : palette;
       var gifData = encodeGIF(selectedFrames, w, h, pal, delays, useDither);
       var blob = new Blob([gifData], {type: 'image/gif'});
 
