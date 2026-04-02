@@ -84,6 +84,15 @@
     </div>
     <div class="full-row">
       <label>目标大小上限 (MB)<input type="number" id="optMaxMB" value="5" min="1" max="50" step="0.5"></label>
+      <label>颜色采样 (越大越准)<input type="number" id="optSample" value="20000" min="1000" max="100000" step="1000"></label>
+    </div>
+    <div class="full-row">
+      <label>抖动 (减少色带)
+        <select id="optDither" style="padding:8px 10px;border-radius:8px;border:1px solid #334155;background:#1e1e2e;color:#e0e0e0;font-size:.9rem;">
+          <option value="1" selected>开启 (推荐)</option>
+          <option value="0">关闭</option>
+        </select>
+      </label>
     </div>
   </div>
   <button class="btn" id="convertBtn" disabled>开始转换</button>
@@ -101,11 +110,11 @@
 
 <script>
 /* ========== 颜色量化：Median Cut 算法（简洁可靠版） ========== */
-function quantize(imageData, maxColors) {
+function quantize(imageData, maxColors, sampleCount) {
   var pixels = [];
   var data = imageData.data;
-  /* 采样像素（每隔几个取一个，加速） */
-  var step = Math.max(1, Math.floor(data.length / 4 / 10000));
+  var totalPixels = data.length / 4;
+  var step = Math.max(1, Math.floor(totalPixels / (sampleCount || 20000)));
   for (var i = 0; i < data.length; i += 4 * step) {
     pixels.push([data[i], data[i+1], data[i+2]]);
   }
@@ -166,7 +175,7 @@ function findClosest(palette, r, g, b) {
 }
 
 /* ========== GIF 编码器 ========== */
-function encodeGIF(frames, width, height, palette, delays) {
+function encodeGIF(frames, width, height, palette, delays, useDither) {
   var out = [];
 
   /* Header */
@@ -191,7 +200,7 @@ function encodeGIF(frames, width, height, palette, delays) {
   /* Each frame */
   for (var f = 0; f < frames.length; f++) {
     /* Graphic Control Extension - disposal method: restore to background */
-    out.push(0x21, 0xF9, 4, 8); /* 8 = dispose to background (0b00001000) */
+    out.push(0x21, 0xF9, 4, 8);
     pushShort(out, Math.round(delays[f] / 10));
     out.push(0, 0);
 
@@ -201,12 +210,17 @@ function encodeGIF(frames, width, height, palette, delays) {
     pushShort(out, width); pushShort(out, height);
     out.push(0); /* no local color table */
 
-    /* Map pixels to palette indices */
+    /* Map pixels to palette indices with optional dithering */
     var imgData = frames[f].data;
-    var indexed = new Uint8Array(width * height);
-    for (var p = 0; p < indexed.length; p++) {
-      var off = p * 4;
-      indexed[p] = findClosest(palette, imgData[off], imgData[off+1], imgData[off+2]);
+    var indexed;
+    if (useDither) {
+      indexed = ditherFrame(imgData, width, height, palette);
+    } else {
+      indexed = new Uint8Array(width * height);
+      for (var p = 0; p < indexed.length; p++) {
+        var off = p * 4;
+        indexed[p] = findClosest(palette, imgData[off], imgData[off+1], imgData[off+2]);
+      }
     }
 
     /* LZW compress */
@@ -215,6 +229,61 @@ function encodeGIF(frames, width, height, palette, delays) {
 
   out.push(0x3B); /* Trailer */
   return new Uint8Array(out);
+}
+
+/* Floyd-Steinberg 抖动 */
+function ditherFrame(imgData, width, height, palette) {
+  /* 复制像素数据为浮点数组 */
+  var pixels = new Float32Array(width * height * 3);
+  for (var i = 0; i < width * height; i++) {
+    pixels[i*3]   = imgData[i*4];
+    pixels[i*3+1] = imgData[i*4+1];
+    pixels[i*3+2] = imgData[i*4+2];
+  }
+  var indexed = new Uint8Array(width * height);
+
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      var idx = y * width + x;
+      var r = Math.max(0, Math.min(255, Math.round(pixels[idx*3])));
+      var g = Math.max(0, Math.min(255, Math.round(pixels[idx*3+1])));
+      var b = Math.max(0, Math.min(255, Math.round(pixels[idx*3+2])));
+
+      var ci = findClosest(palette, r, g, b);
+      indexed[idx] = ci;
+
+      var er = r - palette[ci][0];
+      var eg = g - palette[ci][1];
+      var eb = b - palette[ci][2];
+
+      /* 扩散误差到相邻像素 */
+      if (x + 1 < width) {
+        var n = idx + 1;
+        pixels[n*3]   += er * 7/16;
+        pixels[n*3+1] += eg * 7/16;
+        pixels[n*3+2] += eb * 7/16;
+      }
+      if (y + 1 < height) {
+        if (x > 0) {
+          var n = idx + width - 1;
+          pixels[n*3]   += er * 3/16;
+          pixels[n*3+1] += eg * 3/16;
+          pixels[n*3+2] += eb * 3/16;
+        }
+        var n = idx + width;
+        pixels[n*3]   += er * 5/16;
+        pixels[n*3+1] += eg * 5/16;
+        pixels[n*3+2] += eb * 5/16;
+        if (x + 1 < width) {
+          var n = idx + width + 1;
+          pixels[n*3]   += er * 1/16;
+          pixels[n*3+1] += eg * 1/16;
+          pixels[n*3+2] += eb * 1/16;
+        }
+      }
+    }
+  }
+  return indexed;
 }
 
 function pushShort(o, v) { o.push(v & 0xFF, (v >> 8) & 0xFF); }
@@ -365,6 +434,8 @@ convertBtn.addEventListener('click', async function() {
     var durInput = parseFloat(document.getElementById('optDur').value) || 0;
     var maxBytes = (parseFloat(document.getElementById('optMaxMB').value) || 5) * 1024 * 1024;
     var userWidth = parseInt(document.getElementById('optWidth').value) || 320;
+    var sampleCount = parseInt(document.getElementById('optSample').value) || 20000;
+    var useDither = document.getElementById('optDither').value === '1';
     var ratio = video.videoHeight / video.videoWidth;
     var endTime = durInput > 0 ? Math.min(startTime + durInput, video.duration) : video.duration;
 
@@ -397,7 +468,7 @@ convertBtn.addEventListener('click', async function() {
     URL.revokeObjectURL(fileURL);
 
     /* 用第一帧建调色板 */
-    var palette = quantize(allFrames[0], 256);
+    var palette = quantize(allFrames[0], 256, sampleCount);
 
     /* 智能编码 */
     var attempts = [
@@ -434,8 +505,8 @@ convertBtn.addEventListener('click', async function() {
       }
 
       /* 如果缩放了，重新建调色板 */
-      var pal = (scale < 1) ? quantize(selectedFrames[0], 256) : palette;
-      var gifData = encodeGIF(selectedFrames, w, h, pal, delays);
+      var pal = (scale < 1) ? quantize(selectedFrames[0], 256, sampleCount) : palette;
+      var gifData = encodeGIF(selectedFrames, w, h, pal, delays, useDither);
       var blob = new Blob([gifData], {type: 'image/gif'});
 
       if (blob.size <= maxBytes || ai === attempts.length - 1) {
